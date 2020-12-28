@@ -7,18 +7,19 @@ To be able to share your website with IPFS while providing an HTTP fallback to y
 - https://cloudflare-ipfs.com/ipfs/
 - https://ipfs.github.io/public-gateway-checker/
 
-but that means all the traffic goes through the selected one and you need to trust it. Also, if you want the gateway to serve your website quickly, better have a dedicated one for your.
+but that means all the traffic goes through the selected one and you need to trust it. Also, if you want the Gateway to serve your website quickly, better have a dedicated one for your.
 
-#2 You can host your own public gateway
+#2 You can host your own public Gateway
 but:
 - you most likely do not want to expose the full IPFS network ; only your specific website(s)
 - you might not want to expose that this website is backed by IPFS (the paths that includes "/ipfs")
 
-#3 You can front your local gateway with this light "reverse proxy" that translates your host to IPFS paths and only exposes those you need.
+#3 You can front your local Gateway with this light "reverse proxy" that translates your host to IPFS paths and only exposes those you need.
 
 Features:
 - Reverse Proxy with a mapping from an hostname to an IPFS sub-part
 - Provide X-Ipfs-Path Header for IPFS Companion (browser plugin) to use the local IPFS when available
+- Resolve the mapping every minute to always use the direct object on the Gateway. Otherwise, periodically (around 10 times an hour), some requests could take more than 20 seconds to start responding due to a slow resolving step. By resolving in another thread, that leaves the web service keep serving the previously resolved objects.
 
 ## Example
 
@@ -49,6 +50,7 @@ cat > _config.json << _EOF
 {
     "port" : 8888,
     "localGatewayUrl" : "http://127.0.0.1:8080",
+    "localApiHostPort" : "127.0.0.1:5001",
     "mapping" : {
         "localhost.foilen-lab.com" : "/ipns/cdn.foilen.com",
         "localhost2.foilen-lab.com" : "/ipns/k51qzi5uqu5dhuj92m8egzrbx6e0apodpebvs7y4fqe1rc6rxb1hsiwgovl94o"

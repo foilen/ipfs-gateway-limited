@@ -12,10 +12,17 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
+
+	shell "github.com/ipfs/go-ipfs-api"
 )
+
+var ipfsAPIClient *shell.Shell
 
 var rootConfig *RootConfiguration
 var nextRequestID *uint64 = new(uint64)
+
+var resolvedMapping map[string]string
 
 func main() {
 
@@ -32,11 +39,48 @@ func main() {
 		panic(err)
 	}
 
+	// Create the client
+	ipfsAPIClient = shell.NewShell(rootConfig.LocalAPIHostPort)
+
+	// Initial refresh of the mapping and then every minute
+	resolvedMapping = rootConfig.Mapping
+	refreshMappingResolv()
+	refreshTicker := time.NewTicker(1 * time.Minute)
+	go func() {
+		for {
+			<-refreshTicker.C
+			refreshMappingResolv()
+		}
+	}()
+
 	// Start the reverse proxy
 	log.Println("Starting local reverse proxy on port", rootConfig.Port)
 
 	http.HandleFunc("/", handler)
 	log.Print(http.ListenAndServe(fmt.Sprintf(":%v", rootConfig.Port), nil))
+}
+
+func refreshMappingResolv() {
+
+	log.Println("Begin resolving all mapping paths")
+
+	newResolvedMapping := make(map[string]string)
+
+	for host, unresolvedPath := range rootConfig.Mapping {
+
+		resolvedPath, err := ipfsAPIClient.Resolve(unresolvedPath)
+		if err != nil {
+			log.Println("[WARN]", host, "Could not resolve", unresolvedPath, ". Using previous value", resolvedMapping[host])
+			newResolvedMapping[host] = resolvedMapping[host]
+			continue
+		}
+		log.Println(host, unresolvedPath, "resolved to", resolvedPath)
+		newResolvedMapping[host] = resolvedPath
+	}
+
+	resolvedMapping = newResolvedMapping
+
+	log.Println("End resolving all mapping paths")
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +95,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	log.Println(requestID, "Browser request", r)
 
 	// Get the mapping and check if valid
-	mappedPath := rootConfig.Mapping[hostname]
+	mappedPath := resolvedMapping[hostname]
 	if mappedPath == "" {
 		log.Println(requestID, "[ERROR] Unknown host")
 		w.WriteHeader(http.StatusNotAcceptable)
