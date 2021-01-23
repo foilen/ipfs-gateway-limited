@@ -95,21 +95,22 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	log.Println(requestID, "Browser request", r)
 
 	// Get the mapping and check if valid
-	mappedPath := resolvedMapping[hostname]
-	if mappedPath == "" {
+	mappedPath := rootConfig.Mapping[hostname]
+	mappedPathResolved := resolvedMapping[hostname]
+	if mappedPathResolved == "" {
 		log.Println(requestID, "[ERROR] Unknown host")
 		w.WriteHeader(http.StatusNotAcceptable)
 		fmt.Fprint(w, "The hostname ", hostname, " is not mapped on this service")
 		return
 	}
-	log.Println(requestID, "Is mapped to", mappedPath)
+	log.Println(requestID, "Is mapped to", mappedPathResolved)
 
 	// Call the Gateway - Browser -> Gateway
 	var err error
 	gatewayRequest := r.Clone(r.Context())
 	gatewayRequest.RequestURI = ""
 	gatewayRequest.Host = strings.Split(rootConfig.LocalGatewayURL, "://")[1]
-	gatewayRequest.URL, err = url.Parse(rootConfig.LocalGatewayURL + mappedPath + path)
+	gatewayRequest.URL, err = url.Parse(rootConfig.LocalGatewayURL + mappedPathResolved + path)
 	if err != nil {
 		log.Println(requestID, "[ERROR] Parsing URL", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -128,7 +129,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// Copy the headers - Gateway -> Browser
 	for k, vv := range gatewayResponse.Header {
 		for _, v := range vv {
-			w.Header().Add(k, v)
+			if k == "X-Ipfs-Path" {
+				// Convert to the unresolved path mappedPathResolved -> mappedPath
+				w.Header().Add(k, strings.Replace(v, mappedPathResolved, mappedPath, 1))
+			} else {
+				w.Header().Add(k, v)
+			}
 		}
 	}
 
@@ -140,7 +146,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		buf.ReadFrom(gatewayResponse.Body)
 		bodyStr := buf.String()
 
-		newBody := strings.ReplaceAll(bodyStr, mappedPath, "")
+		newBody := strings.ReplaceAll(bodyStr, mappedPathResolved, "")
 		gatewayResponse.Body = ioutil.NopCloser(strings.NewReader(newBody))
 	}
 
